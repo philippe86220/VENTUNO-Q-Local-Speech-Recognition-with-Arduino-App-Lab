@@ -1,0 +1,7 @@
+name: Wav-ASR -V2
+description: ""
+ports: []
+bricks:
+- arduino:asr: {}
+- arduino:web_ui: {}
+icon: 😀

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>VENTUNO Q — Reconnaissance vocale</title>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    margin: 40px auto;
+    padding: 0 20px;
+    max-width: 850px;
+    background: #f5f6f8;
+    color: #222;
+}
+
+h1 {
+    margin-bottom: 30px;
+}
+
+button {
+    font-size: 18px;
+    margin: 10px;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+#recordButton {
+    background: #198754;
+    color: white;
+}
+
+#stopButton {
+    background: #dc3545;
+    color: white;
+}
+
+button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+#status {
+    margin-top: 25px;
+    font-weight: bold;
+    font-size: 18px;
+}
+
+#duration {
+    margin-top: 15px;
+    font-size: 24px;
+    font-weight: bold;
+}
+
+.transcription-box {
+    margin-top: 30px;
+    padding: 20px;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    text-align: left;
+}
+
+.transcription-box h2 {
+    margin-top: 0;
+}
+
+#transcription {
+    min-height: 100px;
+    white-space: pre-wrap;
+    line-height: 1.6;
+    font-size: 17px;
+}
+
+#asrTime {
+    margin-top: 15px;
+    font-size: 14px;
+    color: #666;
+}
+</style>
+</head>
+
+<body>
+
+<h1>VENTUNO Q — Reconnaissance vocale</h1>
+
+<button id="recordButton" onclick="startRecord()">
+    🎙 Enregistrer
+</button>
+
+<button id="stopButton" onclick="stopRecord()" disabled>
+    ■ Arrêter
+</button>
+
+<div id="status">État : initialisation...</div>
+
+<div id="duration">00:00</div>
+
+<div class="transcription-box">
+    <h2>Transcription</h2>
+
+    <div id="transcription">
+        Aucun texte transcrit.
+    </div>
+  
+<button id="copyButton" onclick="copyText()">
+    📋 Copier le texte
+</button>
+
+    <div id="asrTime"></div>
+</div>
+
+<script>
+
+const recordButton = document.getElementById("recordButton");
+const stopButton = document.getElementById("stopButton");
+const statusBox = document.getElementById("status");
+const durationBox = document.getElementById("duration");
+const transcriptionBox = document.getElementById("transcription");
+const asrTimeBox = document.getElementById("asrTime");
+
+let requestPending = false;
+
+async function getJSON(url) {
+    const response = await fetch(url, { cache: "no-store" });
+
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+
+    return await response.json();
+}
+
+function formatDuration(seconds) {
+    const total = Math.floor(seconds);
+
+    const minutes = Math.floor(total / 60);
+    const remainingSeconds = total % 60;
+
+    return String(minutes).padStart(2, "0") + ":" +
+           String(remainingSeconds).padStart(2, "0");
+}
+
+function showMode(mode) {
+
+    if (mode === "recording") {
+        statusBox.textContent = "État : enregistrement en cours...";
+    }
+    else if (mode === "stopping") {
+        statusBox.textContent = "État : arrêt de l'enregistrement...";
+    }
+    else if (mode === "transcribing") {
+        statusBox.textContent = "État : transcription en cours...";
+    }
+    else {
+        statusBox.textContent = "État : prêt";
+    }
+
+    recordButton.disabled = requestPending || mode !== "idle";
+    stopButton.disabled = requestPending || mode !== "recording";
+}
+
+async function copyText() {
+
+    const text = transcriptionBox.textContent.trim();
+
+    if (!text || text === "Aucun texte transcrit.") {
+        return;
+    }
+
+    try {
+        await navigator.clipboard.writeText(text);
+
+        const button = document.getElementById("copyButton");
+
+        button.textContent = "✓ Texte copié !";
+
+        setTimeout(() => {
+            button.textContent = "📋 Copier le texte";
+        }, 2000);
+
+    } catch (error) {
+        console.error("Erreur de copie :", error);
+        alert("Impossible de copier automatiquement le texte.");
+    }
+}
+
+async function refreshStatus() {
+
+    try {
+        const data = await getJSON("/api/status");
+
+        if (data.error) {
+            statusBox.textContent = "Erreur : " + data.error;
+        }
+        else {
+            showMode(data.mode);
+        }
+
+        durationBox.textContent = formatDuration(data.duration || 0);
+
+        transcriptionBox.textContent =
+            data.text || "Aucun texte transcrit.";
+
+        if (data.asr_duration > 0) {
+            asrTimeBox.textContent =
+                "Durée de transcription : " +
+                data.asr_duration.toFixed(2) + " secondes";
+        }
+        else {
+            asrTimeBox.textContent = "";
+        }
+
+    } catch (error) {
+        statusBox.textContent = "État : service indisponible";
+        recordButton.disabled = true;
+        stopButton.disabled = true;
+    }
+}
+
+async function startRecord() {
+
+    requestPending = true;
+    recordButton.disabled = true;
+
+    try {
+        const data = await getJSON("/api/record");
+
+        if (data.error) {
+            statusBox.textContent = "Erreur : " + data.error;
+        }
+
+    } catch (error) {
+        statusBox.textContent = "Erreur : impossible de démarrer";
+    } finally {
+        requestPending = false;
+        await refreshStatus();
+    }
+}
+
+async function stopRecord() {
+
+    requestPending = true;
+    stopButton.disabled = true;
+
+    try {
+        const data = await getJSON("/api/stop_record");
+
+        if (data.error) {
+            statusBox.textContent = "Erreur : " + data.error;
+        }
+
+    } catch (error) {
+        statusBox.textContent = "Erreur : impossible d'arrêter";
+    } finally {
+        requestPending = false;
+        await refreshStatus();
+    }
+}
+
+// Actualisation automatique
+refreshStatus();
+setInterval(refreshStatus, 1000);
+
+</script>
+
+</body>
+</html>
