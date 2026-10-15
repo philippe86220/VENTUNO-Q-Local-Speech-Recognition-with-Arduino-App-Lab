@@ -4,4 +4,4 @@ ports: []
 bricks:
 - arduino:asr: {}
 - arduino:web_ui: {}
-icon: 😀
+icon: 🧠
